@@ -6,7 +6,9 @@ from enum import Enum
 
 
 class ResponseCode(Enum):
-    error = 0       # Generic situations
+    error = 0       # Generic situation
+    notFound = 1
+    cutConnection = 2
     buffer = 100
 
     # actions
@@ -36,6 +38,14 @@ class Protocol:
     @staticmethod
     def error(message):
         return Protocol(ResponseCode.error, message)
+    
+    @staticmethod
+    def notFound():
+        return Protocol(ResponseCode.notFound, "Not Found")
+
+    @staticmethod
+    def cutConnection():
+        return Protocol(ResponseCode.cutConnection, "Cut Connection")
     
     @staticmethod
     def buffer(BUFFER_SIZE):
@@ -153,19 +163,18 @@ class FileByte:
     file = None
     fragments = []
     bufferSize = 0
-    # mode {0 == normal}; {1 == buffer}
-    mode = 0
     isWritabble = False
     name = ""
+    dataCount = 0
 
     def __init__(self, filename, file, bufferSize = 0):
         self.file = file
-        self.mode = int(bufferSize == 0)
         self.fragments = []
         self.bufferSize = bufferSize
         self.eof = False
         self.isWritabble = False
         self.name = filename
+        self.dataCount = 0
 
     def endOfFile(self):
         return self.eof
@@ -196,6 +205,7 @@ class FileByte:
             self.fragments = []
         
         self.fragments.append(data)
+        self.dataCount += len(Protocol.toBinary(data))
 
     def saveAndClose(self):
         if not self.isWritabble:
@@ -204,6 +214,7 @@ class FileByte:
         
         for fragment in self.fragments:
             self.file.write(fragment)
+            self.dataCount += len(Protocol.toBinary(fragment))
         
         self.close()
 
@@ -302,11 +313,9 @@ class Transaction:
     provider = None
     bufferSize = 1024
 
-    def __init__(self, provider, bufferSize=1024, ip=None, port=None):
+    def __init__(self, provider, bufferSize=1024):
         self.provider = provider
         self.bufferSize = bufferSize
-        self.ip = ip
-        self.port = port
 
     def connect(self, ip, port):
         self.provider.connect((ip, port))
@@ -327,14 +336,20 @@ class Transaction:
     def refused(self):
         return Comunication.refused().execute(self.provider)
 
+    def maxDataSize(self):
+        return 5242880
+    
+    def maxBufferSize(self):
+        return 2048
+
     def send(self, filename):
         global file
         file = FileByte.open(filename, self.bufferSize, False)
 
         if not file:
-            return self.refused()
+            return Comunication.send(Protocol.notFound()).execute(self.provider)
 
-        if os.stat(file.name).st_size > 5242880:
+        if os.stat(file.name).st_size > self.maxDataSize():
             return Comunication.send(Protocol.fileSizeExceeded()).execute(self.provider)
 
         def willEnd(response):
@@ -351,7 +366,7 @@ class Transaction:
             
             if protocol.code != ResponseCode.accepted:
                 return protocol
-            
+
             if file.endOfFile():
                 file.close()
                 return Comunication.send(Protocol.checkSum(file.md5())).onResponse(willEnd).bufferSize(self.bufferSize)
@@ -363,7 +378,6 @@ class Transaction:
             if not protocol:
                 return Comunication.refused()
             
-            print(protocol.asString())
             if protocol.code != ResponseCode.accepted:
                 return protocol
             
@@ -383,8 +397,11 @@ class Transaction:
                 return Comunication.refused()
             
             if protocol.code == ResponseCode.fragment:
+                if file.dataCount > self.maxDataSize():
+                    return Comunication.send(Protocol.fileSizeExceeded())
+
                 file.append(protocol.message)
-                return Comunication.accepted().bufferSize(self.bufferSize).onResponse(onResponse)
+                return Comunication.accepted().bufferSize(bufferSize).onResponse(onResponse)
             
             file.saveAndClose()
             if protocol.code != ResponseCode.checkSum:
@@ -395,7 +412,10 @@ class Transaction:
             return Comunication.accepted().bufferSize(self.bufferSize)
 
         def onBufferSync(response):
+            global file
+            
             protocol = Protocol.fromData(response)
+
             if not protocol:
                 return Comunication.refused()
             
@@ -403,21 +423,22 @@ class Transaction:
                 return protocol
 
             bufferSize = int(protocol.message)
+            if bufferSize >= self.maxBufferSize():
+                return Comunication.refused()
+
+            file = FileByte.open(filename, bufferSize, True)
             return Comunication.accepted().onResponse(onResponse).bufferSize(bufferSize).recursive(self.provider)
 
         def onReceiveProtocol(response):
-            global file
 
             protocol = Protocol.fromData(response)
             if not protocol:
                 return Comunication.refused()
             
-            print("Client 2", protocol.asRaw())
             if protocol.code != ResponseCode.receive:
-                # protocol.code == .fileSizeExceeded or protocol.code == .refused
+                # protocol.code == .fileSizeExceeded or .refused or .notFound
                 return protocol
 
-            file = FileByte.open(filename, self.bufferSize, True)
             return Comunication.accepted().onResponse(onBufferSync).bufferSize(self.bufferSize).execute(self.provider)
         
         return Comunication.send(Protocol.send(filename)).onResponse(onReceiveProtocol).bufferSize(self.bufferSize).recursive(self.provider)

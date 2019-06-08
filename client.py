@@ -68,6 +68,10 @@ def printProtocol(protocol, responsesCodes=[]):
         if protocol.code == ResponseCode.error:
             print(protocol.asString())
             return protocol
+        
+        if protocol.code == ResponseCode.notPermitted:
+            print("Server asked you to authenticate first")
+            return protocol
 
         if id(code) == id(Any) or protocol.code == code:
             print("\n"+protocol.asString())
@@ -108,6 +112,7 @@ def mayBeSend(message):
     printProtocol(transaction.receive(result[1]), [
         (ResponseCode.checkSum, "Successfuly received"),
         (ResponseCode.accepted, "Successfuly received file"),
+        (ResponseCode.notFound, "Server can't find the file"),
         (Any, "Server can't send file")
     ])
 
@@ -119,6 +124,7 @@ def mayBeReceive(message):
     printProtocol(transaction.clientSend(result[1]), [
         (ResponseCode.accepted, "Successfuly sended File"),
         (ResponseCode.checkSum, "Error during Transmission"),
+        (ResponseCode.notFound, "Can't find the file"),
         (Any, "Can't send file")
     ])
 

@@ -67,6 +67,8 @@ class ClientThread(Thread):
         if protocol.code == ResponseCode.auth:
             return self.auth(protocol)
 
+        return Comunication.send(Protocol.notPermitted())
+
     def didReceived(self, protocol):
         if self.isAuthenticated:
             toCommit = self.asUser(protocol)
@@ -83,6 +85,7 @@ class ClientThread(Thread):
     def observe(self):
         protocol = self.transaction.waitForResponse()
         if not protocol:
+            self.transaction.commit(Comunication.send(Protocol.cutConnection()))
             return False
 
         print(protocol.asRaw())
