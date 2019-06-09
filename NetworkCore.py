@@ -9,6 +9,10 @@ class ResponseCode(Enum):
     error = 0       # Generic situation
     notFound = 1
     cutConnection = 2
+    alive = 3
+
+    data = 10
+    listFiles = 11
     buffer = 100
 
     # actions
@@ -47,6 +51,18 @@ class Protocol:
     def cutConnection():
         return Protocol(ResponseCode.cutConnection, "Cut Connection")
     
+    @staticmethod
+    def alive():
+        return Protocol(ResponseCode.alive, "Alive")
+        
+    @staticmethod
+    def data(data):
+        return Protocol(ResponseCode.data, Protocol.toBinary(data))
+
+    @staticmethod
+    def listFiles():
+        return Protocol(ResponseCode.listFiles, "List Files")
+
     @staticmethod
     def buffer(BUFFER_SIZE):
         return Protocol(ResponseCode.buffer, str(BUFFER_SIZE))
@@ -413,7 +429,7 @@ class Transaction:
 
         def onBufferSync(response):
             global file
-            
+
             protocol = Protocol.fromData(response)
 
             if not protocol:

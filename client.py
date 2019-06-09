@@ -46,6 +46,9 @@ def isReceive(message):
 
     return (True, filename[0])
 
+def isListFiles(message):
+    return prefix("ls", message)
+
 def commit(protocol):
     def onResponse(data):
         return Protocol.fromData(data)
@@ -128,6 +131,20 @@ def mayBeReceive(message):
         (Any, "Can't send file")
     ])
 
+def mayBeListFiles(message):
+    if not isListFiles(message):
+        return False
+    
+    print(message)
+    protocol = printProtocol(commit(Protocol.listFiles()), [
+        (ResponseCode.data, "Files:"),
+        (Any, "Command helper: \"logout\"")
+    ])
+
+    if type(protocol) == Protocol and protocol.code == ResponseCode.data:
+        for file in protocol.message.split(";"):
+            print(file)
+
 def atLeastOne(message, functions):
     for handler in functions:
         if handler(message):
@@ -138,8 +155,56 @@ def atLeastOne(message, functions):
 #print(id(Any) == id(Any))
 #exit()
 
-transaction = Transaction(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-transaction.connect('localhost', 9001)
+def getActiveServers():
+    def onResponse(response):
+        print(response)
+        return Protocol.fromData(response)
+    
+    transaction = Transaction(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+    transaction.connect('localhost', 9000)
+    protocol = transaction.commit(Comunication.send(Protocol.alive()).onResponse(onResponse))
+    transaction.close()
+
+    if not protocol:
+        print("Can't communicate with main server")
+        return None
+    
+    if protocol.code != ResponseCode.data:
+        print("I've got an unexpected response")
+        return None
+    
+    servers = protocol.message.split(";")
+    print("Choose a server\n")
+    
+    for i in range(0, len(servers)):
+        server = servers[i]
+        print("("+str(i)+") "+str(" ".join(server.split(","))))
+    
+    print("(q) Quit")
+    option = input("\n:: ")
+
+    def communicationType(type):
+        if type == "tcp":
+            return socket.SOCK_STREAM
+        return socket.SOCK_DGRAM
+
+    if not option.isnumeric():
+        return None
+    
+    option = int(option)
+    server = servers[int(option)].split(",")
+    t = Transaction(socket.socket(socket.AF_INET, communicationType(server[1])))
+    try:
+        t.connect(server[0], int(server[2]))
+        return t
+    except:
+        print("Server offline")
+        return None
+
+transaction = getActiveServers()
+
+if not transaction:
+    exit()
 
 while True:
     message = input(":: ")
@@ -150,7 +215,8 @@ while True:
         mayBeAuth,
         mayBeLogout,
         mayBeSend,
-        mayBeReceive
+        mayBeReceive,
+        mayBeListFiles
     ])
 
 #with open('received_file', 'wb') as f:
