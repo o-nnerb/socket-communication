@@ -4,6 +4,9 @@ import os.path
 import hashlib
 from enum import Enum
 
+class ContentType(Enum):
+    data = 1
+    string = 2
 
 class ResponseCode(Enum):
     error = 0       # Generic situation
@@ -34,10 +37,15 @@ class ResponseCode(Enum):
 class Protocol:
     code = ResponseCode.accepted
     message = ""
+    contentType = ContentType.string
 
     def __init__(self, code, message):
         self.code = code
         self.message = message
+        if (type(message)) == bytes:
+            self.contentType = ContentType.data
+        else:
+            self.contentType = ContentType.string
 
     @staticmethod
     def error(message):
@@ -119,7 +127,7 @@ class Protocol:
         if type(self.message) != bytes:
             middle = str(self.message)
         
-        return "<Protocol-"+str(self.code.value)+"-"+middle+"->"
+        return "<Protocol-"+str(self.code.value)+"-"+str(self.contentType.value)+"-"+middle+"->"
 
     @staticmethod
     def byteSize(data):
@@ -164,6 +172,8 @@ class Protocol:
         middle = data[len("<Protocol-"):len(data)-len("->")]
         code = nextParam(middle)
         middle = middle[len(code)+1:]
+        contentType = nextParam(middle)
+        middle = middle[len(contentType)+1:]
         message = middle
         
         code = ResponseCode(int(code))
@@ -290,7 +300,9 @@ class Comunication:
     
     def execute(self, socket, isRecursive=False):
         if self.__send:
-            socket.send(self.__send.asData())
+            data = self.__send.asData()
+            data = str(len(data)).encode() + data
+            socket.send(data)
 
         if not self.__onResponse:
             return self.__send

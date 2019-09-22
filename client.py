@@ -161,7 +161,7 @@ def getActiveServers():
         return Protocol.fromData(response)
     
     transaction = Transaction(socket.socket(socket.AF_INET, socket.SOCK_STREAM))
-    transaction.connect('localhost', 9000)
+    transaction.connect('localhost', 9999)
     protocol = transaction.commit(Comunication.send(Protocol.alive()).onResponse(onResponse))
     transaction.close()
 
